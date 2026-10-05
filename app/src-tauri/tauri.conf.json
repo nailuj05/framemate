@@ -4,9 +4,9 @@
   "version": "0.1.5",
   "identifier": "dev.framemate.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "deno task dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "deno task build",
     "frontendDist": "../build"
   },
   "app": {

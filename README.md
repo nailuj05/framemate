@@ -117,12 +117,12 @@ page in any browser, and `http://frame.local:7380/stream?token=<your token>` mir
 
 ## Building from source
 
-Requirements: Rust (with the `aarch64-unknown-linux-musl` target), Bun, Flatpak, and for the app
-the Android SDK + NDK and JDK 21.
+Requirements: Rust (`rust-toolchain.toml` pins the toolchain and target), Deno, Flatpak, and for
+the app the Android SDK + NDK and JDK 21. On Nix, `nix-shell` (or direnv) covers the agent and
+Deno; the Android SDK/NDK and JDK are not included.
 
 ```sh
 # Agent: static aarch64 binary → Flatpak bundle (no flatpak-builder or emulation needed)
-rustup target add aarch64-unknown-linux-musl
 scripts/flatpak.sh                  # → target/flatpak/framemate-agent.flatpak
 scripts/flatpak.sh install          # build, install on the Frame via SSH, register the service
 
@@ -131,9 +131,9 @@ scripts/deploy.sh                   # scripts/deploy.sh logs | stop
 
 # App
 cd app
-bun install
-bun run tauri android build --apk --target aarch64
-bun run tauri dev                   # desktop window for UI work
+deno install
+deno task tauri android build --apk --target aarch64
+deno task tauri dev                   # desktop window for UI work
 ```
 
 `scripts/*.sh` reach the Frame as `steamos@frame.local` (override with `FRAME_HOST`).

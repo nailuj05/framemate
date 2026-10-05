@@ -58,7 +58,7 @@ source](README.md#building-from-source). The quick loop:
 
 ```sh
 scripts/deploy.sh          # build + run the current agent on the Frame (| logs | stop)
-cd app && bun run tauri dev # desktop window for UI work
+cd app && deno task tauri dev # desktop window for UI work
 ```
 
 `scripts/*.sh` reach the Frame as `steamos@frame.local`; override with
@@ -70,9 +70,8 @@ CI only builds release artifacts on pushed `v*` tags, which needs push access to
 
 ```sh
 cargo test                   # agent unit tests (host target, not musl)
-cargo fmt --all              # default rustfmt, no custom config
 cargo clippy --all-targets
-cd app && bun run check      # svelte-check + TypeScript
+cd app && deno task check   # svelte-check + TypeScript
 ```
 
 Also:
