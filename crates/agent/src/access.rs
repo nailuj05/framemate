@@ -4,7 +4,7 @@
 //! subnet as one of the Frame's interfaces (LAN devices with global IPv6 addresses).
 //! `FRAMEMATE_ALLOW_REMOTE=1` turns the check off. The token stays the actual protection.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::{ConnectInfo, Request, State};
@@ -17,7 +17,7 @@ const LOG_INTERVAL_S: u64 = 10;
 
 pub async fn local_only(
     State(allow_remote): State<bool>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(crate::server::Peer(peer)): ConnectInfo<crate::server::Peer>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -27,10 +27,40 @@ pub async fn local_only(
     }
     static LAST_LOG: AtomicU64 = AtomicU64::new(0);
     let now = crate::hub::now_ms() / 1000;
-    if now.saturating_sub(LAST_LOG.swap(now, Ordering::Relaxed)) >= LOG_INTERVAL_S {
+    // compare_exchange, not swap: swapping on every rejection kept pushing the window forward,
+    // so a scanner faster than one request per interval silenced the log after the first line.
+    let last = LAST_LOG.load(Ordering::Relaxed);
+    if now.saturating_sub(last) >= LOG_INTERVAL_S
+        && LAST_LOG.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok()
+    {
         tracing::warn!("rejected {ip}: not in the local network (FRAMEMATE_ALLOW_REMOTE=1 allows it)");
     }
     (StatusCode::FORBIDDEN, "FrameMate only accepts connections from the local network\n").into_response()
+}
+
+/// The address for the pairing payload, used by the app only when mDNS doesn't resolve.
+///
+/// IPv4 only, deliberately. The hostname is the primary route and the listener is dual-stack
+/// (`listen` in server.rs), so an AAAA from mDNS is answered without the pairing code carrying
+/// an IPv6 literal at all. Carrying one would mean either a link-local address, which needs a
+/// zone index (`fe80::1%wlan0`) that means nothing on another host, or a global one, which can
+/// rotate away under privacy extensions and leave the pairing stale. A LAN with no IPv4 at all
+/// is rare enough to leave to typing the address in by hand.
+///
+/// Asks the routing table rather than scanning `getifaddrs`, so a `docker0` or VPN address
+/// can't win over the one a phone would actually use. `connect` on UDP sends nothing.
+pub fn lan_address() -> Option<IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:9").ok()?; // TEST-NET-1, never actually contacted
+    let ip = socket.local_addr().ok()?.ip();
+    dialable(ip).then_some(ip)
+}
+
+fn dialable(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => !v4.is_loopback() && !v4.is_link_local() && !v4.is_unspecified(),
+        IpAddr::V6(_) => false,
+    }
 }
 
 /// `networks` is only consulted for public addresses (reads the interfaces).
@@ -127,6 +157,18 @@ mod tests {
     fn rejects_public_addresses() {
         for ip in ["8.8.8.8", "::ffff:1.1.1.1", "2001:db8:9:9::1", "2a00:1450:4001::200e"] {
             assert!(!local(ip), "{ip} should be rejected");
+        }
+    }
+
+    #[test]
+    fn skips_addresses_the_phone_cannot_dial() {
+        // IPv6 is never offered: the hostname plus a dual-stack listener covers it.
+        for ip in ["127.0.0.1", "169.254.1.1", "0.0.0.0", "::1", "fe80::1", "::",
+            "fd12:3456:789a::1", "2001:db8:1:2::abcd"] {
+            assert!(!dialable(ip.parse().unwrap()), "{ip} should not be offered for pairing");
+        }
+        for ip in ["192.168.178.130", "10.1.2.3", "172.20.0.5"] {
+            assert!(dialable(ip.parse().unwrap()), "{ip} should be offered for pairing");
         }
     }
 

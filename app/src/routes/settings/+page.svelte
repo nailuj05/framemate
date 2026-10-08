@@ -5,39 +5,58 @@
   import { openExternal } from "$lib/external";
   import { APP_VERSION, updates } from "$lib/updates.svelte";
 
-  let host = $state(agent.settings.host);
-  let token = $state(agent.settings.token);
+  let code = $state("");
+  let failure = $state<string | null>(null);
 
   const statusText = $derived(
     {
-      unconfigured: "Enter host and token",
+      unconfigured: "Not paired yet",
       connecting: "Connecting…",
-      connected: `Connected to ${agent.state?.agent.hostname ?? agent.authority}`,
-      offline: agent.settings.host.includes(".local")
-        ? `Can't reach ${agent.authority}. Try the Frame's IP address instead.`
-        : `Can't reach ${agent.authority}`,
-      unauthorized: "Wrong token. Check it on the Frame (see below).",
+      connected: `Connected to ${agent.state?.agent.hostname ?? "the Frame"}`,
+      offline: "Can't reach the Frame. Is it awake and on the same network?",
+      unauthorized: "The Frame rejected the token. Pair again.",
     }[agent.status],
   );
 
-  function save(event: SubmitEvent) {
-    event.preventDefault();
-    agent.save({ host, token });
+  async function pair(payload: string) {
+    failure = null;
+    try {
+      await agent.pair(payload);
+      code = "";
+    } catch (error) {
+      failure = String(error);
+    }
+  }
+
+  async function scanCode() {
+    failure = null;
+    try {
+      const { scan, Format } = await import("@tauri-apps/plugin-barcode-scanner");
+      const result = await scan({ windowed: false, formats: [Format.QRCode] });
+      await pair(result.content);
+    } catch (error) {
+      failure = String(error);
+    }
   }
 </script>
 
 <Section title="Connection">
-  <form onsubmit={save}>
+  <form onsubmit={event => { event.preventDefault(); pair(code); }}>
+    <button class="button" type="button" onclick={scanCode}>Scan pairing code</button>
+    <p class="hint">
+      Run <code>flatpak run --user dev.framemate.Agent pair</code> on the Frame and scan the QR code.
+    </p>
     <label>
-      <span>Frame address</span>
-      <input bind:value={host} placeholder="frame.local or 192.168.x.x" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <span>Or enter the code it prints</span>
+      <input bind:value={code} placeholder="FM1 frame.local 7381 …" autocapitalize="characters" autocorrect="off" spellcheck="false" />
     </label>
-    <label>
-      <span>Token</span>
-      <input bind:value={token} placeholder="XXXXX-XXXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" />
-    </label>
-    <button class="button" type="submit">Save &amp; connect</button>
-    <p class="hint">Show the token on the Frame with <code>flatpak run --user dev.framemate.Agent token</code>.</p>
+    <button class="button secondary" type="submit" disabled={!code.trim()}>Pair</button>
+    {#if failure}
+      <p class="status offline">{failure}</p>
+    {/if}
+    {#if agent.error}
+      <p class="status offline">{agent.error}</p>
+    {/if}
     {#if agent.status === "offline" && localNetworkBlocked()}
       <p class="status offline">
         Android blocks FrameMate from your local network. Allow <b>Nearby devices</b> in the app's permissions.

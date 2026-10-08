@@ -9,10 +9,16 @@ anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws"] }
 futures-util = "0.3.34"
 libc = "0.2.190"
+qrcode = { version = "0.14.1", default-features = false }
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
+# ring comes in via rustls/rcgen anyway; using it directly avoids a second SHA-256 in the binary.
+ring = "0.17.14"
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 socket2 = "0.6.5"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "time", "sync", "io-util", "signal"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"] }
 tokio-tungstenite = "0.30.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

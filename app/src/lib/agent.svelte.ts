@@ -1,39 +1,42 @@
 // Connection to the agent: latest state from `/api/ws`, reconnects on its own.
+//
+// The socket goes to the app's own loopback proxy (src-tauri/src/proxy.rs), which holds the
+// pinned TLS connection to the Frame, a WebView can't pin a certificate itself. Hence
+// `127.0.0.1` here and the `s=` secret on every request.
+
+import { invoke } from "@tauri-apps/api/core";
 
 import type { AgentState } from "./types";
 
-const STORAGE_KEY = "framemate.connection";
-const DEFAULT_PORT = 7380;
 const RETRY_MS = 3000;
 /** A connect that hasn't opened by then is given up (a sleeping Frame never answers the SYN). */
 const CONNECT_TIMEOUT_MS = 8000;
 /** The agent pushes at least every ~10 s (power poll); silence beyond this means a dead socket. */
 const SILENCE_MS = 25000;
 
-export interface ConnectionSettings {
-  /** Hostname or IP, optionally with `:port`. */
-  host: string;
+/** Where the proxy listens, and the two secrets every request carries. */
+export interface Connection {
+  port: number;
+  /** Gates the proxy, so other apps on the phone can't use it to reach the LAN. */
+  secret: string;
+  /** The agent's own token, from the pairing code. */
   token: string;
+  paired: boolean;
 }
 
 /** `unauthorized`: the agent answered but rejected the token. */
 export type ConnectionStatus = "unconfigured" | "connecting" | "connected" | "offline" | "unauthorized";
 
-function loadSettings(): ConnectionSettings {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-    if (saved?.host !== undefined && saved?.token !== undefined) return saved;
-  } catch {}
-  return { host: "frame.local", token: "" };
-}
-
 class Agent {
-  settings = $state<ConnectionSettings>(loadSettings());
+  connection = $state<Connection | null>(null);
   state = $state<AgentState | null>(null);
   status = $state<ConnectionStatus>("unconfigured");
 
   /** When the last message arrived; tells live data from a snapshot left over from before. */
   receivedAt = $state(0);
+
+  /** Something the user has to act on — above all, a Frame whose key no longer matches. */
+  error = $state<string | null>(null);
 
   #socket: WebSocket | null = null;
   #retry: ReturnType<typeof setTimeout> | undefined;
@@ -45,26 +48,37 @@ class Agent {
   }
 
   get configured() {
-    return this.settings.host.trim() !== "" && this.settings.token.trim() !== "";
+    return this.connection?.paired ?? false;
   }
 
   get authority() {
-    const host = this.settings.host.trim();
-    if (host.startsWith("[")) return /\]:\d+$/.test(host) ? host : `${host}:${DEFAULT_PORT}`;
-    // A bare IPv6 address needs brackets before a port can follow.
-    if ((host.match(/:/g) ?? []).length > 1) return `[${host}]:${DEFAULT_PORT}`;
-    return /:\d+$/.test(host) ? host : `${host}:${DEFAULT_PORT}`;
+    return this.connection ? `127.0.0.1:${this.connection.port}` : "";
   }
 
   socketUrl(path: string) {
-    return `ws://${this.authority}${path}?token=${encodeURIComponent(this.settings.token.trim())}`;
+    return `ws://${this.authority}${path}?${this.#query()}`;
   }
 
-  save(settings: ConnectionSettings) {
-    this.settings = { host: settings.host.trim(), token: settings.token.trim() };
+  #query() {
+    const { token, secret } = this.connection!;
+    return `token=${encodeURIComponent(token)}&s=${encodeURIComponent(secret)}`;
+  }
+
+  /** Picks up an existing pairing and connects. Resolves before the socket opens. */
+  async start() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.settings));
-    } catch {}
+      this.connection = await invoke<Connection | null>("connection");
+    } catch {
+      // Not running under Tauri (plain `deno task dev` in a browser).
+      this.connection = null;
+    }
+    this.connect();
+  }
+
+  /** Takes a scanned or pasted pairing code; throws with a message worth showing. */
+  async pair(payload: string) {
+    this.connection = await invoke<Connection>("pair", { payload });
+    this.error = null;
     this.state = null;
     this.status = "connecting";
     this.connect();
@@ -86,6 +100,7 @@ class Agent {
       if (this.#socket !== socket) return;
       this.state = JSON.parse(event.data);
       this.status = "connected";
+      this.error = null;
       this.receivedAt = Date.now();
       this.#arm(socket, SILENCE_MS, lost);
     };
@@ -123,6 +138,8 @@ class Agent {
     clearTimeout(this.#watchdog);
     // A rejected upgrade looks like any other failure to the WebSocket API; ask over HTTP.
     const status = opened ? "offline" : await this.#probe();
+    // The proxy reports what the socket can't, e.g. the Frame's key not matching the pairing.
+    this.error = await invoke<string | null>("last_error").catch(() => null);
     if (this.#socket || this.#retry !== undefined) return; // reconnected meanwhile
     this.status = status;
     this.#retry = setTimeout(() => {
@@ -134,7 +151,7 @@ class Agent {
   /** Wrong token (401) vs. unreachable; needs CORS on /api/state. */
   async #probe(): Promise<ConnectionStatus> {
     try {
-      const url = `http://${this.authority}/api/state?token=${encodeURIComponent(this.settings.token.trim())}`;
+      const url = `http://${this.authority}/api/state?${this.#query()}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(RETRY_MS) });
       return response.status === 401 ? "unauthorized" : "offline";
     } catch {

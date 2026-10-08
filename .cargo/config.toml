@@ -1,4 +1,6 @@
-# Static aarch64 build for the Steam Frame. Works with rust-lld because the
-# dependency tree is pure Rust (no TLS, no C) — keep it that way.
+# Static aarch64 build for the Steam Frame
 [target.aarch64-unknown-linux-musl]
 linker = "rust-lld"
+
+[env]
+CC_aarch64_unknown_linux_musl = "clang"

@@ -6,11 +6,13 @@ mod devices;
 mod encoder;
 mod fmp4;
 mod hub;
+mod pair;
 mod power;
 mod server;
 mod service;
 mod steamos;
 mod stream;
+mod tls;
 mod v4l2;
 
 use tracing_subscriber::EnvFilter;
@@ -23,6 +25,7 @@ Without a command, runs the agent.
 commands:
   install-service    start the agent with the user session (systemd user unit)
   uninstall-service  remove that unit again
+  pair               print the pairing QR code for the companion app
   token              print the API token for the companion app
   check              check the running agent and print what the app needs
   rotate-token       replace the API token (and restart the agent to use it)";
@@ -35,6 +38,7 @@ async fn main() -> anyhow::Result<()> {
         Some("uninstall-service") => return service::uninstall().await,
         Some("check") => return check::run().await,
         Some("rotate-token") => return service::rotate_token().await,
+        Some("pair") => return pair::run(std::env::args().nth(2).as_deref() == Some("--text")).await,
         Some("token") => {
             println!("{}", config::format_token(&config::load_or_create_token()?));
             return Ok(());

@@ -4,7 +4,9 @@
     "npm:@sveltejs/adapter-static@^3.0.10": "3.0.10_@sveltejs+kit@2.70.3__@sveltejs+vite-plugin-svelte@7.3.1___svelte@5.57.1___vite@8.3.2__svelte@5.57.1__typescript@6.0.3__vite@8.3.2_@sveltejs+vite-plugin-svelte@7.3.1__svelte@5.57.1__vite@8.3.2_svelte@5.57.1_typescript@6.0.3_vite@8.3.2",
     "npm:@sveltejs/kit@^2.65.1": "2.70.3_@sveltejs+vite-plugin-svelte@7.3.1__svelte@5.57.1__vite@8.3.2_svelte@5.57.1_typescript@6.0.3_vite@8.3.2",
     "npm:@sveltejs/vite-plugin-svelte@^7.1.2": "7.3.1_svelte@5.57.1_vite@8.3.2",
+    "npm:@tauri-apps/api@2": "2.12.1",
     "npm:@tauri-apps/cli@2": "2.12.1",
+    "npm:@tauri-apps/plugin-barcode-scanner@2": "2.5.1",
     "npm:svelte-check@^4.6.0": "4.7.6_svelte@5.57.1_typescript@6.0.3",
     "npm:svelte@^5.56.3": "5.57.1",
     "npm:typescript@~6.0.3": "6.0.3",
@@ -176,6 +178,9 @@
         "vitefu"
       ]
     },
+    "@tauri-apps/api@2.12.1": {
+      "integrity": "sha512-DeyFHa3wynpyoqTDikDEDGTJIq4LQ5USfolQGRmGIWT6JMADyxZBTDa5cAdT3tDg73rUXufPaCwN7aXBos4OnQ=="
+    },
     "@tauri-apps/cli-darwin-arm64@2.12.1": {
       "integrity": "sha512-8bMnbpJ2jKO/ufrOPL65EMHC3ptw7fzeraoQkwibyfGLqIl+UCWsC0152kmNbW6r9NvVQduXqAZF5mH1QgTWhw==",
       "os": ["darwin"],
@@ -247,6 +252,12 @@
         "@tauri-apps/cli-win32-x64-msvc"
       ],
       "bin": true
+    },
+    "@tauri-apps/plugin-barcode-scanner@2.5.1": {
+      "integrity": "sha512-VepKHdSGAKqFcPIXS3Nd0GA5uqQ840cJnHKY1B1Tf1Am9y2RSCyTht4FQd/tMpbu7g9vAmk3HI+qvN71jiQIyA==",
+      "dependencies": [
+        "@tauri-apps/api"
+      ]
     },
     "@types/cookie@0.6.0": {
       "integrity": "sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA=="
@@ -562,7 +573,9 @@
         "npm:@sveltejs/adapter-static@^3.0.10",
         "npm:@sveltejs/kit@^2.65.1",
         "npm:@sveltejs/vite-plugin-svelte@^7.1.2",
+        "npm:@tauri-apps/api@2",
         "npm:@tauri-apps/cli@2",
+        "npm:@tauri-apps/plugin-barcode-scanner@2",
         "npm:svelte-check@^4.6.0",
         "npm:svelte@^5.56.3",
         "npm:typescript@~6.0.3",
