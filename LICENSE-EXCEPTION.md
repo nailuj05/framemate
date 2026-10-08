@@ -1,9 +1,7 @@
 # Additional terms
 
-FrameMate is licensed under the GNU General Public License, version 3 or (at
-your option) any later version — see [`LICENSE`](LICENSE). The following terms
-accompany that license. Nothing here takes away any permission the GPL grants
-you.
+FrameMate is licensed under the GNU General Public License, version 3 (see [`LICENSE`](LICENSE)). The following terms
+accompany that license.
 
 ## 1. Additional permission for app store distribution (GPL-3.0 section 7)
 
@@ -50,6 +48,7 @@ logo files and choose its own application identifier.
 - Icons are from Material Symbols by Google, licensed Apache-2.0. See
   [`app/src/lib/icons/LICENSES.md`](app/src/lib/icons/LICENSES.md). Apache-2.0
   is compatible with GPL-3.0; the icons remain under their own license.
+- Steam Frame Controller Icons are from "Input Prompts" by Kenney. Licensed under CC0.
 - Game artwork shown in the app is loaded at runtime from Steam's public CDN
   and is not part of this project.
 - Steam, SteamOS and Steam Frame are trademarks of Valve Corporation.
