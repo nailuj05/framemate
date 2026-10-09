@@ -7,6 +7,14 @@
 
   let code = $state("");
   let failure = $state<string | null>(null);
+  let cameraBlocked = $state(false);
+
+  function describe(error: unknown) {
+    if (typeof error === "string") return error;
+    if (error instanceof Error) return error.message;
+    const message = (error as { message?: unknown } | null)?.message;
+    return typeof message === "string" ? message : JSON.stringify(error);
+  }
 
   const statusText = $derived(
     {
@@ -24,18 +32,28 @@
       await agent.pair(payload);
       code = "";
     } catch (error) {
-      failure = String(error);
+      failure = describe(error);
     }
   }
 
   async function scanCode() {
     failure = null;
+    cameraBlocked = false;
     try {
-      const { scan, Format } = await import("@tauri-apps/plugin-barcode-scanner");
-      const result = await scan({ windowed: false, formats: [Format.QRCode] });
+      const scanner = await import("@tauri-apps/plugin-barcode-scanner");
+      // The plugin's scan() refuses without the permission and never asks for it itself.
+      let permission = await scanner.checkPermissions();
+      if (permission !== "granted") permission = await scanner.requestPermissions();
+      if (permission !== "granted") {
+        // After a "don't ask again" Android answers "denied" without showing a dialog.
+        cameraBlocked = true;
+        return;
+      }
+      const result = await scanner.scan({ windowed: false, formats: [scanner.Format.QRCode] });
       await pair(result.content);
     } catch (error) {
-      failure = String(error);
+      const message = describe(error);
+      if (message !== "cancelled") failure = message;
     }
   }
 </script>
@@ -53,6 +71,14 @@
     <button class="button secondary" type="submit" disabled={!code.trim()}>Pair</button>
     {#if failure}
       <p class="status offline">{failure}</p>
+    {/if}
+    {#if cameraBlocked}
+      <p class="status offline">
+        Scanning needs the camera. Allow <b>Camera</b> in the app's permissions, or enter the code by hand.
+      </p>
+      <button class="button secondary" type="button" onclick={() => window.FrameMateAndroid?.openAppSettings?.()}>
+        Open app settings
+      </button>
     {/if}
     {#if agent.error}
       <p class="status offline">{agent.error}</p>
