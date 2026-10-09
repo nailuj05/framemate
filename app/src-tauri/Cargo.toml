@@ -4,7 +4,7 @@
 [package]
 name = "framemate-app"
 description = "FrameMate companion app"
-version = "0.1.5"
+version = "0.2.0"
 license = "GPL-3.0-or-later"
 edition = "2024"
 
@@ -17,7 +17,22 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+ring = "0.17.14"
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"] }
+webpki = { package = "rustls-webpki", version = "0.103", default-features = false, features = ["alloc", "ring"] }
+
+# Mobile-only: the scanner plugin has no desktop implementation.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+
+[dev-dependencies]
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
+tokio = { version = "1", features = ["time"] }
 
 [profile.release]
 strip = true

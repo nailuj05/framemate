@@ -78,10 +78,12 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: deno install --frozen
 
       # Signed with the release key from the repository secrets (see build.gradle.kts).
       - name: Build APK
@@ -92,7 +94,7 @@ jobs:
         run: |
           export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           base64 -d <<< "$ANDROID_KEYSTORE_BASE64" > "$ANDROID_KEYSTORE_PATH"
-          bun run tauri android build --apk --target aarch64
+          deno task tauri android build --apk --target aarch64
           rm "$ANDROID_KEYSTORE_PATH"
           cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
             ../framemate.apk

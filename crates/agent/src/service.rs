@@ -35,8 +35,10 @@ pub async fn install() -> anyhow::Result<()> {
     std::fs::create_dir_all(path.parent().unwrap())?;
     std::fs::write(&path, unit).with_context(|| format!("writing {}", path.display()))?;
 
-    // Create the token now, so the starting service and a following `token` call can't race.
+    // Create the token and TLS key now, so the starting service and a following `token` or
+    // `pair` call can't race over generating them.
     crate::config::load_or_create_token()?;
+    crate::tls::Identity::load_or_create()?;
 
     let systemd = match Systemd::reachable().await {
         Ok(systemd) => systemd,
@@ -90,7 +92,7 @@ pub async fn rotate_token() -> anyhow::Result<()> {
     match Systemd::reachable().await {
         // TryRestartUnit only restarts it if it's running; NoSuchUnit without install-service.
         Ok(systemd) => match systemd.call("TryRestartUnit", &(UNIT, "replace")).await {
-            Ok(()) => println!("Restarted {UNIT}; enter the new token in the app."),
+            Ok(()) => println!("Restarted {UNIT}; run `pair` and scan the new code in the app."),
             Err(_) => println!("{UNIT} isn't installed; restart the agent to use the new token."),
         },
         Err(_) => {

@@ -28,8 +28,7 @@ By signing off you certify the four points in [`DCO`](DCO), and that your
 contribution is offered under:
 
 - the **GNU GPL v3.0 or later** ([`LICENSE`](LICENSE)); **and**
-- the additional terms in [`LICENSE-EXCEPTION.md`](LICENSE-EXCEPTION.md) —
-  notably the GPL §7 app store distribution permission.
+- the additional terms in [`LICENSE-EXCEPTION.md`](LICENSE-EXCEPTION.md) (notably the GPL §7 app store distribution permission).
 
 That second point is key, it allows future app store releases without needing to get approval from every past contributor. 
 
@@ -44,7 +43,7 @@ That second point is key, it allows future app store releases without needing to
 
 Following should be preserved:
 
-- **The agent stays small and dependency-light.** It's ~5 MB and idles at
+- **The agent stays small and dependency-light.** It's ~6.5 MB and idles at
   practically zero CPU on a battery-powered headset. New dependencies in
   `crates/agent` need to earn their place.
 - **The agent stays free of heavyweight media stacks.** Encoding talks to the
@@ -58,7 +57,7 @@ source](README.md#building-from-source). The quick loop:
 
 ```sh
 scripts/deploy.sh          # build + run the current agent on the Frame (| logs | stop)
-cd app && bun run tauri dev # desktop window for UI work
+cd app && deno task tauri dev # desktop window for UI work
 ```
 
 `scripts/*.sh` reach the Frame as `steamos@frame.local`; override with
@@ -70,9 +69,8 @@ CI only builds release artifacts on pushed `v*` tags, which needs push access to
 
 ```sh
 cargo test                   # agent unit tests (host target, not musl)
-cargo fmt --all              # default rustfmt, no custom config
 cargo clippy --all-targets
-cd app && bun run check      # svelte-check + TypeScript
+cd app && deno task check   # svelte-check + TypeScript
 ```
 
 Also:

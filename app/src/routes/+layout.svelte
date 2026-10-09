@@ -27,9 +27,11 @@
   );
 
   onMount(() => {
-    agent.connect();
+    // Pairing lives on the Rust side now, so the connection details arrive asynchronously.
+    agent.start().then(() => {
+      if (!agent.configured) goto("/settings");
+    });
     if (updates.autoCheck) updates.check();
-    if (!agent.configured) goto("/settings");
     // Coming back from the background: the socket may be dead without knowing it, so always
     // fetch a fresh snapshot instead of trusting the old one.
     const onVisible = () => {

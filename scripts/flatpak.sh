@@ -4,7 +4,8 @@
 # (binary + metadata) and exported, so this works on an x86 desktop.
 #
 #   scripts/flatpak.sh            build target/flatpak/framemate-agent.flatpak
-#   scripts/flatpak.sh install    ...then install it on the Frame and register the service
+#   scripts/flatpak.sh install    ...then install it on the Frame like scripts/install.sh does
+#                                 (service + self check + pairing code), from this build
 #
 # Env: FRAME_HOST (default steamos@frame.local), FRAME_SSH_OPTS (see deploy.sh).
 set -euo pipefail
@@ -54,8 +55,10 @@ echo "Built $BUNDLE"
 
 ssh() { /usr/bin/ssh "${SSH_OPTS[@]}" "$HOST" "$@"; }
 /usr/bin/scp -q "${SSH_OPTS[@]}" "$BUNDLE" "$HOST:/tmp/framemate-agent.flatpak"
-# The dev unit from deploy.sh would hold port 7380.
+# Same steps as scripts/install.sh. The dev unit from deploy.sh would hold the ports.
 ssh "systemctl --user stop framemate-agent-dev 2>/dev/null; \
+  flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && \
   flatpak install --user --reinstall --noninteractive -y /tmp/framemate-agent.flatpak && \
   rm /tmp/framemate-agent.flatpak && \
-  flatpak run --user $APP_ID install-service"   # also runs `check`, which prints the token
+  flatpak run --user $APP_ID install-service && \
+  echo && flatpak run --user $APP_ID pair"

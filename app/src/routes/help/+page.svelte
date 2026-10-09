@@ -7,24 +7,39 @@
 <Section title="Installation">
   <p>
     This app needs a helper called framemate-agent, a small service running on the Frame. <br>
-    The agent is shipped as a Flatpak that you will need to install on your Steam Frame. The easiest way to install it is through SSH if you have that setup to your Frame, otherwise the Desktop Mode Terminal will also work. <br>
+    Open a terminal on the Frame — over SSH, or through the Desktop Mode Terminal — and run the
+    installer from the GitHub page. It installs the agent, starts it, and prints a QR code. <br>
     <b>Check out the GitHub page for exact install instructions</b>
   </p>
 </Section>
 
-<Section title="Token">
+<Section title="Pairing">
   <p>
-    FrameMate uses a token for communicating with your Steam Frame. This token is shown on installation or by running
-    <code>flatpak run --user dev.framemate.Agent token</code> on the headset with framemate-agent installed.
-    Write it down, you will need it to connect the app with the headset.
+    Tap <b>Scan pairing code</b> in Settings and point the camera at the QR code the installer
+    printed. Print it again any time with <code>flatpak run --user dev.framemate.Agent pair</code>.
+    Pairing doesn't need the agent to be running, so it's always safe to scan right away: the app
+    shows the Frame as offline until the agent is up, then connects on its own.
+    The code carries the Frame's address, the access token and the fingerprint of the Frame's
+    encryption key, so one scan is all the setup there is.
+  </p>
+  <p>
+    The code is a secret: anyone who has it can read your headset's screen. Don't share a photo
+    of it. If the terminal is too narrow for the QR code, the same line of text is printed below
+    it and can be typed into Settings instead.
   </p>
 </Section>
 
 <Section title="Connecting">
   <p>
-    Once the agent is installed on the headset, you acquired the token and the app is ready on your phone you can connect the two.
-    The connection requires the Frame's address, usually this will be frame.local, if that doesn't work try your headset's IP address directly.
-    You can find out your IP by running <code>ip a</code>. Both headset and phone need to be in the same local network for the connection to work.
+    Both headset and phone need to be on the same local network. The app reaches the Frame by its
+    .local name and falls back to the IP address from the pairing code, so a router that doesn't
+    forward mDNS is handled automatically.
+  </p>
+  <p>
+    Traffic between phone and Frame is encrypted and tied to the key fingerprint from the pairing
+    code. Updating or reinstalling the agent keeps that key, so pairing survives it. If the key
+    does change, because the agent's configuration was wiped, the app refuses to connect and
+    asks you to pair again rather than trusting a new key silently.
   </p>
 </Section>
 

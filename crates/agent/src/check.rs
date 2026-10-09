@@ -2,13 +2,13 @@
 //! `install-service`. Same sandbox as the service, so permissions are checked too.
 
 use std::ffi::CString;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::config::{self, Config};
+use crate::config::Config;
 
 /// The service needs a moment after `RestartUnit` (`flatpak run` startup).
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -92,10 +92,20 @@ pub async fn run() -> anyhow::Result<()> {
         warn(&format!("Mirroring unavailable, can't access {}", missing.join(", ")));
     }
 
-    let ip = lan_ip().map(|ip| format!(" (or {ip})")).unwrap_or_default();
+    let tls = match config.listen_tls.ip() {
+        ip if ip.is_unspecified() => SocketAddr::new(Ipv4Addr::LOCALHOST.into(), config.listen_tls.port()),
+        _ => config.listen_tls,
+    };
+    // A TCP connect is enough: the realistic failure is the port being taken, not a bad handshake.
+    match tokio::net::TcpStream::connect(tls).await {
+        Ok(_) => ok(&format!("TLS port {} open for the app", config.listen_tls.port())),
+        Err(e) => warn(&format!("app can't connect: nothing on port {} ({e})", config.listen_tls.port())),
+    }
+
     println!();
-    println!("Connect the app to: {}.local{ip}", config::hostname());
-    println!("Token: {}", config::format_token(&config.token));
+    // Deliberately no token here: install-service runs this, and TROUBLESHOOTING asks users to
+    // paste the output into public issues. `pair` is the one place credentials are printed.
+    println!("Pair the app: run `pair` and scan the QR code it prints.");
     Ok(())
 }
 
@@ -106,13 +116,6 @@ async fn fetch_state(authority: &str, path: &str) -> anyhow::Result<Value> {
 fn accessible(path: &Path) -> bool {
     CString::new(path.as_os_str().as_encoded_bytes())
         .is_ok_and(|p| unsafe { libc::access(p.as_ptr(), libc::R_OK | libc::W_OK) } == 0)
-}
-
-/// The address of the interface the default route uses. `connect` on UDP sends nothing.
-fn lan_ip() -> Option<IpAddr> {
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("192.0.2.1:9").ok()?; // TEST-NET-1, never actually contacted
-    Some(socket.local_addr().ok()?.ip())
 }
 
 fn ok(msg: &str) {
