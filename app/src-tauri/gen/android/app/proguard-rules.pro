@@ -16,6 +16,15 @@
    @android.webkit.JavascriptInterface <methods>;
 }
 
+# ML Kit (QR pairing via tauri-plugin-barcode-scanner) creates its component registrars by
+# reflection from manifest meta-data. Its own rule keeps only their names, and R8 full mode
+# then drops the constructor and getComponents(): no SharedPrefManager etc. get registered,
+# and the first camera frame crashes with an NPE in mlkit_vision_common.
+-keep class * implements com.google.firebase.components.ComponentRegistrar {
+   <init>();
+   *;
+}
+
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
