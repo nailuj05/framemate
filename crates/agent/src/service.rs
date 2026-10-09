@@ -92,7 +92,7 @@ pub async fn rotate_token() -> anyhow::Result<()> {
     match Systemd::reachable().await {
         // TryRestartUnit only restarts it if it's running; NoSuchUnit without install-service.
         Ok(systemd) => match systemd.call("TryRestartUnit", &(UNIT, "replace")).await {
-            Ok(()) => println!("Restarted {UNIT}; enter the new token in the app."),
+            Ok(()) => println!("Restarted {UNIT}; run `pair` and scan the new code in the app."),
             Err(_) => println!("{UNIT} isn't installed; restart the agent to use the new token."),
         },
         Err(_) => {

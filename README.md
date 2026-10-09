@@ -80,11 +80,11 @@ rm framemate-agent.flatpak
 
 - `flatpak install` pulls the Freedesktop runtime from Flathub if it isn't installed yet
   (about 270 MB, once).
-- `install-service` registers a user service, so the agent starts with every boot – in
-  Game Mode too – and restarts it right away, then runs a self check.
+- `install-service` registers a user service, so the agent starts with every boot (in
+  Game Mode too) and restarts it right away, then runs a self check.
   In Desktop Mode it can't start the agent right away (the nested desktop has no access to the
   user's systemd); the agent then starts with the next restart, and the command prints how to
-  start it immediately. Either way it prints the pairing code.
+  start it immediately. Either way `pair` prints the pairing code afterwards.
 - `flatpak run --user dev.framemate.Agent pair` prints the pairing code again, as a QR code and
   as plain text for terminals too narrow to draw it. It contains the access token, so treat it
   like a password.
