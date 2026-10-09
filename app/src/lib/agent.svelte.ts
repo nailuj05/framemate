@@ -152,7 +152,7 @@ class Agent {
   async #probe(): Promise<ConnectionStatus> {
     try {
       const url = `http://${this.authority}/api/state?${this.#query()}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(RETRY_MS) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
       return response.status === 401 ? "unauthorized" : "offline";
     } catch {
       return "offline";

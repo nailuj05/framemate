@@ -122,3 +122,26 @@ async fn refuses_a_frame_with_the_wrong_pin() {
     let error = status.take().expect("a pin mismatch must be surfaced to the user");
     assert!(error.contains("paired with"), "unhelpful message: {error}");
 }
+
+#[tokio::test]
+async fn moves_on_from_an_address_that_stalls_the_handshake() {
+    let (agent_port, pin, _seen) = agent().await;
+    // Same port on another loopback address: accepts TCP, then never says a word.
+    let staller = TcpListener::bind(("127.0.0.2", agent_port)).await.unwrap();
+    tokio::spawn(async move {
+        let mut parked = Vec::new();
+        while let Ok((stream, _)) = staller.accept().await {
+            parked.push(stream);
+        }
+    });
+    let pairing = Pairing { host: Some("127.0.0.2".into()), ip: Some("127.0.0.1".into()), ..pairing(agent_port, &pin) };
+    let current = Arc::new(Mutex::new(Some(proxy::Target::new(pairing).unwrap())));
+    let p = proxy::spawn(current, Arc::new(proxy::Status::default())).await.unwrap();
+
+    let mut socket = TcpStream::connect(("127.0.0.1", p.port)).await.unwrap();
+    let line = format!("GET /api/ws?token=ABCDE-FGHJK&s={} HTTP/1.1\r\n\r\n", p.secret);
+    socket.write_all(line.as_bytes()).await.unwrap();
+    let mut got = String::new();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), socket.read_to_string(&mut got)).await;
+    assert!(got.contains("200 OK"), "expected the second address to answer, got {got:?}");
+}

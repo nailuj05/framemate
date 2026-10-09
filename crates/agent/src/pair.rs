@@ -9,17 +9,15 @@ use qrcode::{Color, EcLevel, QrCode};
 use crate::config;
 use crate::tls::Identity;
 
-/// Format marker. The app is side-loaded, so its version drifts from the agent's freely; this
-/// lets a mismatch be reported instead of misparsed.
 const TAG: &str = "FM1";
-
-/// Placeholder for a field the agent couldn't determine, so parsing stays positional.
 const ABSENT: &str = "-";
-
-/// Modules of quiet zone. The spec asks for 4; 2 scans fine and saves four terminal lines.
 const QUIET: isize = 2;
 
 pub async fn run(text_only: bool) -> anyhow::Result<()> {
+    // `pair --text | head -1` closes the pipe early; die quietly like other CLI tools instead of
+    // println! panicking on EPIPE. Sockets are unaffected (Rust sends with MSG_NOSIGNAL).
+    // SAFETY: restores the default disposition the runtime replaced with SIG_IGN.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     let config = config::Config::from_env()?;
     let token = config::format_token(&config.token);
     let identity = Identity::load_or_create()?;

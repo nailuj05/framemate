@@ -13,18 +13,13 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::pairing::Pairing;
 
-/// Enough for a request line plus the WebSocket headers.
 const HEADER_LIMIT: usize = 8192;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-/// Pause after a failed accept, so a persistent error (EMFILE) cannot become a busy loop.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
-/// A client that opens the loopback socket and then says nothing is dropped after this.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 /// Crockford base32
 const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-/// Presented in the handshake and never checked: the pin is the whole trust decision.
-/// Deliberately not the Frame's real address: rustls omits SNI for IP literals, so the real
-/// host would make the handshake differ by candidate, and the ClientHello is plaintext on the wire. Matches `SAN` in crates/agent/src/tls.rs
 const HANDSHAKE_NAME: &str = "framemate-agent.invalid";
 
 /// Set when a connection fails in a way the user has to act on
@@ -193,7 +188,11 @@ async fn connect(
             }
         };
         let name = ServerName::try_from(HANDSHAKE_NAME).map_err(|e| Failure::Rejected(e.to_string()))?;
-        match connector.connect(name, tcp).await {
+        let Ok(handshake) = tokio::time::timeout(HANDSHAKE_TIMEOUT, connector.connect(name, tcp)).await else {
+            last = format!("{host}: TLS handshake stalled for {}s", HANDSHAKE_TIMEOUT.as_secs());
+            continue;
+        };
+        match handshake {
             Ok(tls) => {
                 preferred.store(index, Ordering::Relaxed);
                 return Ok(tls);
