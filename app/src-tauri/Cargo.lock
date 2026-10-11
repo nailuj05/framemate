@@ -893,6 +893,7 @@ dependencies = [
 name = "framemate-app"
 version = "0.2.0"
 dependencies = [
+ "jni",
  "rcgen",
  "ring",
  "rustls",

@@ -43,6 +43,25 @@
   </p>
 </Section>
 
+<Section title="Notifications in VR">
+  <p>
+    FrameMate can show your phone's notifications in the headset, as regular Steam toasts. It's off
+    by default: tap the bell in the top bar to turn it on, the crossed out bell means it's off.
+    The first time, Android asks you to give FrameMate notification access. After that every app's
+    notifications get forwarded, you can switch off the ones you don't want in Settings (apps show
+    up there once they've posted a notification).
+  </p>
+  <p>
+    Your notifications only go to your Frame, encrypted, and are never stored. If someone else is
+    using the headset, just tap the bell again and nothing gets forwarded.
+  </p>
+  <p>
+    Android greys out the notification access switch for sideloaded apps. Open the app info, tap ⋮
+    and choose <b>Allow restricted settings</b>, then try again. More in the
+    <a href="https://github.com/nailuj05/framemate/blob/main/TROUBLESHOOTING.md#notifications" onclick={external}>troubleshooting guide</a>.
+  </p>
+</Section>
+
 <Section title="Issues">
   <p>
     If you encounter any issues with the app or agent, please submit a GitHub Issue so I can get it fixed. <br>

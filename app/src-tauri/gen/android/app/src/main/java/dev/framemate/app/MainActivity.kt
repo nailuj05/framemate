@@ -1,5 +1,6 @@
 package dev.framemate.app
 
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -63,6 +64,38 @@ class MainActivity : TauriActivity() {
 
     @JavascriptInterface
     fun localNetworkAllowed() = this@MainActivity.localNetworkAllowed()
+
+    /** Whether the user granted "Notification access" to FrameNotificationListener. */
+    @JavascriptInterface
+    fun notificationAccessGranted(): Boolean {
+      val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
+      val ours = ComponentName(this@MainActivity, FrameNotificationListener::class.java)
+      return enabled.split(':').any { ComponentName.unflattenFromString(it) == ours }
+    }
+
+    @JavascriptInterface
+    fun openNotificationAccessSettings() = runOnUiThread {
+      startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    /** `{enabled, apps: [{pkg, label, enabled}], last: {result, time} | null}` */
+    @JavascriptInterface
+    fun notificationSettings(): String = NotificationPrefs(this@MainActivity).toJson()
+
+    @JavascriptInterface
+    fun setNotificationsEnabled(enabled: Boolean) {
+      NotificationPrefs(this@MainActivity).enabled = enabled
+    }
+
+    @JavascriptInterface
+    fun setNotificationAppEnabled(pkg: String, enabled: Boolean) =
+      NotificationPrefs(this@MainActivity).setAppEnabled(pkg, enabled)
+
+    /** Returns at once; the result lands in `notificationSettings().last`. */
+    @JavascriptInterface
+    fun sendTestNotification() {
+      Thread { FrameNotificationListener.sendTest(this@MainActivity) }.start()
+    }
 
     /** After two denials Android stops prompting; only the app's settings page is left. */
     @JavascriptInterface

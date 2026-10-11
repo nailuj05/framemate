@@ -42,6 +42,10 @@ the load low.
 - **Downloads** – the Frame's download queue with progress, speed and time left, plus recently
   finished updates. Downloads of your other PCs (Steam Remote Downloads) are left out.
 - **Mirroring** – see above.
+- **Phone notifications in VR** – your phone's notifications show up in the headset as normal
+  Steam toasts. It's opt-in: off by default, you turn it on with the bell in the app's top bar.
+  Apps you don't want in there can be switched off in the settings. Turn it off again just as
+  quickly, e.g. when someone else is wearing the headset. Nothing gets stored, it only goes from your phone to your Frame.
 - **System** – performance profile, CPU/GPU settings, network throughput, SteamOS and Steam
   client versions, battery temperature and health.
 - **Encrypted** – the phone talks to the Frame over TLS, pinned to the Frame's own key from the
@@ -157,6 +161,7 @@ deno task tauri dev                   # desktop window for UI work
 | `GET /api/state` | full state as JSON |
 | `GET /api/ws` | the same, pushed on every change |
 | `GET /api/stream/ws` | mirroring: `{codec}` header, fMP4 init segment, one fragment per frame |
+| `POST /api/notify` | toast in the headset: `{app, title, body, icon}` → `{"result": "shown"}` or `"headset_asleep"` |
 | `GET /healthz` | liveness, the only route without auth |
 
 Reachable off the Frame on `https://<frame>:7381`. The agent signs its own certificate and the
@@ -196,7 +201,7 @@ FrameMate name, logo and application identifiers (forks must use their own).
 - [ ] Feed on the App notifying you of newly frame verified games (in your library)
 - [ ] Control Downloads (pause, resume, reorder)
 - [ ] View and Transfer Screenshots
-- [ ] Mobile Notifications in VR
+- [x] Mobile Notifications in VR
 - [ ] Turn off controller, headset, etc. 
 
 ## AI usage

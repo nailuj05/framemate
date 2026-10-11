@@ -16,6 +16,9 @@ use crate::pairing::Pairing;
 const HEADER_LIMIT: usize = 8192;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Whole `post_json` exchange: connect + steam
+const POST_TIMEOUT: Duration = Duration::from_secs(15);
+const RESPONSE_LIMIT: u64 = 16 * 1024;
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 /// Crockford base32
@@ -82,6 +85,39 @@ impl Target {
     pub fn token(&self) -> String {
         self.pairing.token.clone()
     }
+
+    pub async fn post_json(&self, path: &str, json: &str) -> Result<(u16, String), String> {
+        let exchange = async {
+            let mut tls = connect(&self.connector, &self.pairing, &self.preferred).await.map_err(|e| match e {
+                Failure::Unreachable(e) | Failure::Rejected(e) => e,
+            })?;
+            let request = format!(
+                "POST {path} HTTP/1.1\r\nHost: framemate\r\nAuthorization: Bearer {}\r\n\
+                 Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json}",
+                self.pairing.token,
+                json.len()
+            );
+            tls.write_all(request.as_bytes()).await.map_err(|e| e.to_string())?;
+            let mut response = Vec::new();
+            // `Connection: close`: the agent ends the stream after the response.
+            tls.take(RESPONSE_LIMIT).read_to_end(&mut response).await.map_err(|e| e.to_string())?;
+            parse_response(&response)
+        };
+        tokio::time::timeout(POST_TIMEOUT, exchange)
+            .await
+            .unwrap_or_else(|_| Err(format!("no answer within {}s", POST_TIMEOUT.as_secs())))
+    }
+}
+
+fn parse_response(response: &[u8]) -> Result<(u16, String), String> {
+    let text = String::from_utf8_lossy(response);
+    let (head, body) = text.split_once("\r\n\r\n").ok_or("incomplete response")?;
+    let status = head
+        .split(' ')
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .ok_or("malformed status line")?;
+    Ok((status, body.trim().to_owned()))
 }
 
 pub type Current = Arc<Mutex<Option<Target>>>;
@@ -317,6 +353,14 @@ mod tests {
         assert_eq!(base32(&[0x00]), "00");
         assert_eq!(base32(&[0xff, 0xff]), "ZZZG");
         assert!(base32(&[0x5a; 16]).bytes().all(|b| ALPHABET.contains(&b)));
+    }
+
+    #[test]
+    fn parses_the_agents_response() {
+        let raw = b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"result\":\"shown\"}";
+        assert_eq!(parse_response(raw), Ok((200, "{\"result\":\"shown\"}".to_owned())));
+        assert_eq!(parse_response(b"HTTP/1.1 429 Too Many Requests\r\n\r\nslow down\n"), Ok((429, "slow down".to_owned())));
+        assert!(parse_response(b"HTTP/1.1 200").is_err());
     }
 
     #[test]

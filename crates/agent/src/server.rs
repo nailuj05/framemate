@@ -5,6 +5,8 @@
 //! - `GET /api/ws`      full state as JSON on connect and after every change (throttled)
 //! - `GET /api/stream/ws` headset view: JSON `{codec}`, fMP4 init segment, then one
 //!   moof+mdat per frame (see stream.rs, fmp4.rs)
+//! - `POST /api/notify` toast in the headset: JSON `{app, title, body, icon}` -> `{result}`
+//!   (`shown` | `headset_asleep`); 400 invalid, 429 rate limited, 503 Steam unavailable
 //! - `GET /healthz`     liveness, the only route without auth
 //!
 //! `/api/*` requires the token via `?token=` or `Authorization: Bearer`.
@@ -18,10 +20,10 @@ use anyhow::Context;
 use axum::Router;
 use axum::extract::connect_info::Connected;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::serve::IncomingStream;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio_rustls::TlsAcceptor;
@@ -29,6 +31,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::config::Config;
 use crate::fmp4;
 use crate::hub::Hub;
+use crate::notify::{self, Notifier};
 use crate::stream::LiveStream;
 use crate::tls::Identity;
 
@@ -43,35 +46,37 @@ struct AppState {
     hub: Arc<Hub>,
     token: Arc<str>,
     stream: Arc<LiveStream>,
+    notifier: Arc<Notifier>,
 }
 
-pub async fn serve(hub: Arc<Hub>, stream: Arc<LiveStream>, config: &Config) -> anyhow::Result<()> {
+pub async fn serve(hub: Arc<Hub>, stream: Arc<LiveStream>, notifier: Arc<Notifier>, config: &Config) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/state", get(state))
         .route("/api/ws", get(ws))
         .route("/api/stream/ws", get(stream_ws))
+        // Icon plus text; JSON escaping can double the raw size
+        .route("/api/notify", post(notify).layer(DefaultBodyLimit::max(2 * notify::MAX_ICON + 16 * 1024)))
         .route("/healthz", get(|| async { "ok" }))
         .layer(axum::middleware::from_fn_with_state(config.allow_remote, crate::access::local_only))
         .with_state(AppState {
             hub,
             token: config.token.as_str().into(),
             stream,
+            notifier,
         });
 
     let plain = bind(config.listen)?;
-    // Fatal rather than degrading to plaintext only: an agent the app silently can't reach is a
-    // worse support case than one that fails loudly with the address in the message.
+    // fail loudly
     let tls = TlsListener::spawn(
         bind(config.listen_tls)?,
         TlsAcceptor::from(Identity::load_or_create()?.server_config()?),
     )?;
     tracing::info!("listening on {} and {} (TLS)", config.listen, config.listen_tls);
-    // A prompt for whoever is sitting at the terminal; pointless in journald.
-    // SAFETY: isatty only inspects the descriptor.
+    
     if unsafe { libc::isatty(libc::STDOUT_FILENO) } == 1 {
         println!("Run `framemate-agent pair` for the code to scan in the app.");
     }
-    // Two signal registrations of the same kind; tokio delivers to all of them.
+
     tokio::try_join!(
         axum::serve(plain, app.clone().into_make_service_with_connect_info::<Peer>())
             .with_graceful_shutdown(shutdown_signal()),
@@ -81,11 +86,6 @@ pub async fn serve(hub: Arc<Hub>, stream: Arc<LiveStream>, config: &Config) -> a
     Ok(())
 }
 
-/// Terminates TLS so `axum::serve` keeps handling graceful shutdown, `ConnectInfo` and the
-///
-/// Handshakes deliberately do *not* happen in `accept`: awaiting one there is serial, so a
-/// client that connects and then sends nothing would block every later connection and take the
-/// whole TLS port down. They run on their own tasks and queue up here instead.
 struct TlsListener {
     local: SocketAddr,
     ready: tokio::sync::mpsc::Receiver<(tokio_rustls::server::TlsStream<tokio::net::TcpStream>, SocketAddr)>,
@@ -97,12 +97,10 @@ impl TlsListener {
         let (tx, ready) = tokio::sync::mpsc::channel(HANDSHAKE_QUEUE);
         tokio::spawn(async move {
             loop {
-                // Delegating keeps axum's own policy for accept errors (it backs off on EMFILE).
+                // delegating keep axums own policy for accept errors
                 let (stream, peer) = axum::serve::Listener::accept(&mut tcp).await;
                 let (acceptor, tx) = (acceptor.clone(), tx.clone());
-                // One task each, with no cap on how many run at once: capping them would mean
-                // queueing, and half-open connections would starve real ones all over again.
-                // What bounds this is the timeout above and the process's file descriptor limit.
+                // one task each
                 tokio::spawn(async move {
                     match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
                         Ok(Ok(tls)) => {
@@ -126,8 +124,7 @@ impl axum::serve::Listener for TlsListener {
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         match self.ready.recv().await {
             Some(ready) => ready,
-            // The accept task runs for the life of the process; only reachable if it panicked,
-            // and `accept` has no way to report that, so stop handing out connections.
+            // accept task runs for the life of the process
             None => std::future::pending().await,
         }
     }
@@ -137,9 +134,6 @@ impl axum::serve::Listener for TlsListener {
     }
 }
 
-/// The peer address access.rs checks. Crate-local because axum ships `Connected` only for its
-/// own `TcpListener`, and the orphan rule rejects an impl for `SocketAddr`: `TlsListener`
-/// appears only as a nested parameter, which doesn't make the impl local.
 #[derive(Clone, Copy)]
 pub struct Peer(pub SocketAddr);
 
@@ -166,7 +160,7 @@ fn bind(addr: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
     }
 }
 
-/// Dual-stack for an IPv6 wildcard (`frame.local` often resolves to IPv6). `IPV6_V6ONLY` has to be cleared before `bind`, which `TcpListener::bind` can't do.
+// Dual-stack for an IPv6 wildcard (`frame.local` often resolves to IPv6). `IPV6_V6ONLY` has to be cleared before `bind`, which `TcpListener::bind` can't do.
 fn listen(addr: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
     let socket = Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP))
         .context("creating the listening socket")?;
@@ -202,6 +196,30 @@ async fn state(
         return (StatusCode::UNAUTHORIZED, cors).into_response();
     }
     (cors, [(header::CONTENT_TYPE, "application/json")], app.hub.snapshot_json()).into_response()
+}
+
+async fn notify(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+    body: axum::body::Bytes,
+) -> Response {
+    if !authorized(&app, &headers, &query) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    // Parsed here rather than with the Json extractor, so a rejection never echoes content.
+    let Ok(toast) = serde_json::from_slice::<notify::Toast>(&body) else {
+        return (StatusCode::BAD_REQUEST, "expected JSON {app, title, body, icon}\n").into_response();
+    };
+    match app.notifier.send(toast).await {
+        Ok(outcome) => axum::Json(outcome).into_response(),
+        Err(notify::Error::Invalid(reason)) => (StatusCode::BAD_REQUEST, format!("{reason}\n")).into_response(),
+        Err(notify::Error::RateLimited) => (StatusCode::TOO_MANY_REQUESTS, "slow down\n").into_response(),
+        Err(notify::Error::Unavailable(reason)) => {
+            tracing::info!("toast not shown: {reason}");
+            (StatusCode::SERVICE_UNAVAILABLE, format!("{reason}\n")).into_response()
+        }
+    }
 }
 
 async fn ws(

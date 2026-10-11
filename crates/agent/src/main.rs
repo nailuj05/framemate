@@ -6,6 +6,7 @@ mod devices;
 mod encoder;
 mod fmp4;
 mod hub;
+mod notify;
 mod pair;
 mod power;
 mod server;
@@ -64,9 +65,10 @@ async fn main() -> anyhow::Result<()> {
     let hub = hub::Hub::new(config::hostname());
     let stream = stream::LiveStream::new(hub.clone(), config.stream.clone());
 
-    tokio::spawn(cdp::run(hub.clone(), config.cdp_url.clone()));
+    let (notifier, toasts) = notify::Notifier::new();
+    tokio::spawn(cdp::run(hub.clone(), config.cdp_url.clone(), toasts));
     tokio::spawn(power::run(hub.clone(), config.power_supply_dir.clone()));
     tokio::spawn(steamos::run(hub.clone()));
 
-    server::serve(hub, stream, &config).await
+    server::serve(hub, stream, std::sync::Arc::new(notifier), &config).await
 }

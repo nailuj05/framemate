@@ -78,6 +78,30 @@ env XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/u
 
 Installing over SSH doesn't have this problem.
 
+## Notifications
+
+### "Controlled by restricted setting"
+
+Android doesn't let sideloaded apps (anything not installed from a store) get notification
+access right away, so the switch for FrameMate is greyed out. You have to allow it once:
+
+1. Try to turn on notification access for FrameMate once, so you get the "restricted setting"
+   message. (The option below only shows up after that.)
+2. Open the app info: Settings > Apps > FrameMate, or the **Open app info** button in
+   FrameMate's settings.
+3. Tap the ⋮ menu in the top right and choose **Allow restricted settings**, confirm with your
+   PIN or fingerprint.
+4. Go back to notification access and turn it on for FrameMate, now it works.
+
+### Notifications don't show up in the headset
+
+- Is the bell in the top bar on (not crossed out)?
+- Is the app you're expecting switched off under Settings > Notifications?
+- Are you wearing the headset? Steam doesn't show toasts while it's asleep.
+- Try **Send a test notification** in the settings. If that works, the connection is fine and
+  it's about the app or its notifications. If not, the line below the button tells you what went wrong.
+- Silent and ongoing notifications (music players, downloads, ...) are skipped on purpose.
+
 ## Other issues
 
 You encountered a different issue or think you found a bug, please let me know!

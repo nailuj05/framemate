@@ -7,6 +7,7 @@
   import Battery from "$lib/components/Battery.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import UpdateNotice from "$lib/components/UpdateNotice.svelte";
+  import { notifications } from "$lib/notifications.svelte";
   import { updates } from "$lib/updates.svelte";
 
   let { children }: { children: Snippet } = $props();
@@ -26,7 +27,23 @@
     new Date(agent.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   );
 
+  // The bell: notification sharing is opt-in and easy to switch off again (someone else wearing
+  // the headset). Switching it on without notification access leads to Android's access page
+  // (and to Settings, which explains the "restricted settings" step for sideloaded apps).
+  function toggleNotifications() {
+    if (notifications.enabled) {
+      notifications.setEnabled(false);
+      return;
+    }
+    notifications.setEnabled(true);
+    if (!notifications.access) {
+      goto("/settings");
+      notifications.openAccessSettings();
+    }
+  }
+
   onMount(() => {
+    notifications.refresh();
     // Pairing lives on the Rust side now, so the connection details arrive asynchronously.
     agent.start().then(() => {
       if (!agent.configured) goto("/settings");
@@ -35,7 +52,9 @@
     // Coming back from the background: the socket may be dead without knowing it, so always
     // fetch a fresh snapshot instead of trusting the old one.
     const onVisible = () => {
-      if (document.visibilityState === "visible") agent.refresh();
+      if (document.visibilityState !== "visible") return;
+      agent.refresh();
+      notifications.refresh(); // e.g. back from Android's notification access page
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
@@ -61,6 +80,17 @@
       <span class="stale-note">{agent.status === "connecting" ? "Updating…" : lastUpdate}</span>
     {/if}
     <span class="status {agent.status}" title={agent.status}></span>
+    {#if notifications.supported}
+      <button
+        class="bell"
+        class:on={notifications.enabled}
+        onclick={toggleNotifications}
+        aria-pressed={notifications.enabled}
+        aria-label={notifications.enabled ? "Notifications in the headset: on" : "Notifications in the headset: off"}
+      >
+        <Icon name={notifications.enabled ? "bell" : "bell-off"} size={20} />
+      </button>
+    {/if}
     <a href="/help" class="help" class:active={true} aria-label="Help" >
       <Icon name="help" size={20} />
     </a>
@@ -126,6 +156,16 @@
   .status.offline,
   .status.unauthorized {
     background: var(--red);
+  }
+  .bell {
+    display: flex;
+    padding: 0;
+    color: var(--muted);
+    background: none;
+    border: none;
+  }
+  .bell.on {
+    color: var(--text);
   }
   /* Flex: on a text line, line-height pushes the icon off-center. */
   .help {

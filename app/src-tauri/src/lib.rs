@@ -1,3 +1,4 @@
+pub mod forward;
 pub mod pairing;
 pub mod proxy;
 

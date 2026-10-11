@@ -25,6 +25,23 @@
             </intent-filter>
         </activity>
 
+        <!-- Phone notifications as toasts in the headset (FrameNotificationListener.kt). The
+             user grants it under "Notification access"; the permission keeps other apps from
+             binding to it. -->
+        <service
+            android:name=".FrameNotificationListener"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+            <!-- Only notifications that alert or are conversations; ongoing/silent ones never reach us. -->
+            <meta-data
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting" />
+        </service>
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"

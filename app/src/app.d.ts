@@ -14,6 +14,15 @@ declare global {
       /** False on Android 17+ until "Nearby devices" (local network) is granted. */
       localNetworkAllowed?(): boolean;
       openAppSettings?(): void;
+      /** Phone notifications. */
+      notificationAccessGranted?(): boolean;
+      openNotificationAccessSettings?(): void;
+      /** JSON, see NotificationSettings in settings/+page.svelte. */
+      notificationSettings?(): string;
+      setNotificationsEnabled?(enabled: boolean): void;
+      setNotificationAppEnabled?(pkg: string, enabled: boolean): void;
+      /** Returns at once; the outcome shows up in notificationSettings().last. */
+      sendTestNotification?(): void;
     };
   }
 }

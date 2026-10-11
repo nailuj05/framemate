@@ -3,6 +3,7 @@
   import Row from "$lib/components/Row.svelte";
   import Section from "$lib/components/Section.svelte";
   import { openExternal } from "$lib/external";
+  import { describeResult, notifications } from "$lib/notifications.svelte";
   import { APP_VERSION, updates } from "$lib/updates.svelte";
 
   let code = $state("");
@@ -15,6 +16,13 @@
     const message = (error as { message?: unknown } | null)?.message;
     return typeof message === "string" ? message : JSON.stringify(error);
   }
+
+  let appsOpen = $state(false);
+  const appsSummary = $derived.by(() => {
+    const apps = notifications.settings?.apps ?? [];
+    const off = apps.filter(app => !app.enabled).length;
+    return apps.length ? `${apps.length}${off ? ` · ${off} off` : ""}` : "none yet";
+  });
 
   const statusText = $derived(
     {
@@ -96,6 +104,53 @@
   </form>
 </Section>
 
+{#if notifications.supported && notifications.settings}
+  <Section title="Notifications" collapsible>
+    {#snippet aside()}<span class="aside">{notifications.enabled ? "On" : "Off"}</span>{/snippet}
+    <Row label="Show in the headset" value={notifications.enabled ? "On" : "Off (bell in the top bar)"} />
+    {#if !notifications.access}
+      <div class="actions">
+        <p class="hint">FrameMate needs notification access to read your notifications. They only go to your Frame,
+          encrypted, and are never stored.</p>
+        <button class="button" onclick={() => notifications.openAccessSettings()}>Grant notification access</button>
+        <p class="hint">If Android greys FrameMate out there, open the app info, tap ⋮ and choose
+          <b>Allow restricted settings</b>, then try again.</p>
+        <button class="button secondary" onclick={() => window.FrameMateAndroid?.openAppSettings?.()}>Open app info</button>
+      </div>
+    {:else}
+      <button class="row expander" aria-expanded={appsOpen} onclick={() => (appsOpen = !appsOpen)}>
+        <span><span class="chevron" class:open={appsOpen}></span>Apps</span>
+        <span class="aside">{appsSummary}</span>
+      </button>
+      {#if appsOpen}
+        {#each notifications.settings.apps as app (app.pkg)}
+          <label class="row toggle app">
+            <span>{app.label}</span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={app.enabled}
+              onchange={event => notifications.setApp(app.pkg, event.currentTarget.checked)}
+            />
+          </label>
+        {/each}
+      {/if}
+      <div class="actions">
+        <button
+          class="button secondary"
+          onclick={() => notifications.sendTest()}
+          disabled={notifications.testing || !notifications.enabled}
+        >
+          {notifications.testing ? "Sending…" : "Send a test notification"}
+        </button>
+        {#if notifications.settings.last && !notifications.testing}
+          <p class="hint">Last: {describeResult(notifications.settings.last.result)}</p>
+        {/if}
+      </div>
+    {/if}
+  </Section>
+{/if}
+
 <Section title="Updates">
   <Row label="App version" value={APP_VERSION} />
   <Row label="Agent version" value={agent.state?.agent.version ?? "not connected"} />
@@ -162,6 +217,44 @@
   input:focus {
     outline: none;
     border-color: var(--accent);
+  }
+  .aside {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  /* A Row that opens the app list below it. */
+  .expander {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 var(--gutter);
+    background: var(--surface);
+    border: none;
+    border-bottom: 1px solid var(--divider);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .chevron {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin: 0 10px 2px 2px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s;
+  }
+  .chevron.open {
+    transform: rotate(45deg);
+  }
+  /* Indented under the "Apps" row. */
+  .toggle.app {
+    padding-left: calc(var(--gutter) + 18px);
   }
   .hint {
     margin: 0;

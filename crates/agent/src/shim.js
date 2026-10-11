@@ -5,13 +5,14 @@
   const W = window;
   try { W.__framemate?.dispose?.(); } catch {}
 
-  const handles = [], timers = [];
+  const handles = [], timers = [], cleanups = [];
   let disposed = false;
   W.__framemate = {
     dispose() {
       disposed = true;
       for (const h of handles) try { h.unregister(); } catch {}
       for (const t of timers) clearInterval(t);
+      for (const c of cleanups) try { c(); } catch {}
     },
   };
 
@@ -205,14 +206,116 @@
     });
   };
 
+  // --- notifications in the headset: Steam's own toast queue, rendered by our component ---
+  // Steam has no toast type for free text (each type has a fixed renderer), so creating the
+  // element for its renderer is intercepted for notifications that carry `framemate`. Steam
+  // still does the rest: queue, sound, the SteamVR notification overlay ("SteamVR -
+  // Notifications"), "disable all toasts" and suppression while the headset is asleep.
+  // Webpack modules are found by shape, never by id (ids change with every Steam build).
+  const LOGO = "data:image/svg+xml;charset=utf-8," + encodeURIComponent("__FRAMEMATE_LOGO_SVG__");
+  const toasts = () => {
+    let require;
+    W.webpackChunksteamui.push([[Symbol("framemate")], {}, r => { require = r; }]);
+    // Steams runtime exposes no module cache (`require.c`), require every id (like decky) also evaluate modules Steam hadnt run yet
+    const loaded = Object.keys(require?.m ?? {})
+      .map(id => { try { return require(id); } catch { return null; } })
+      .filter(e => e && typeof e === "object");
+    const source = f => { try { return Function.prototype.toString.call(f); } catch { return ""; } };
+    let renderer = null;
+    for (const e of loaded) {
+      for (const key of Object.keys(e)) {
+        let v;
+        try { v = e[key]; } catch { continue; }
+        if (typeof v === "function" && source(v).includes('controller:"notification",method:')) renderer = v;
+      }
+    }
+    const runtimes = loaded.filter(e => typeof e.jsx === "function" && typeof e.jsxs === "function" && "Fragment" in e);
+    const css = loaded.map(e => (e.ShortTemplate ? e : e.default)).find(e => e?.ShortTemplate && e.ShortLogoDimensions && e.Title && e.Body);
+    // toasts borrow "download complete" type. must be a real type
+    const store = Object.getPrototypeOf(W.NotificationStore);
+    const member = f => /\.OnNotification\([^,]+,[\w$]+\.[\w$]+\.([\w$]+),/.exec(source(f))?.[1];
+    const typeKey = member(store.TestDownloadComplete), checkKey = member(store.TestFriendMessage);
+    let type;
+    for (const e of typeKey && checkKey ? loaded : []) {
+      for (const key of Object.keys(e)) {
+        let v;
+        try { v = e[key]; } catch { continue; }
+        if (v && typeof v === "object" && Number.isInteger(v[typeKey]) && Number.isInteger(v[checkKey])) type ??= v[typeKey];
+      }
+    }
+    if (!renderer || !runtimes.length || !css || type === undefined) {
+      throw new Error(`toast hook: renderer ${!!renderer}, jsx runtimes ${runtimes.length}, css ${!!css}, type ${type}`);
+    }
+
+    const { jsx, jsxs } = runtimes[0]; // originals, taken before patching
+    const cx = (...names) => names.filter(Boolean).join(" ");
+    // Same markup and classes as Steam's own short toast template.
+    const Toast = ({ group, onDismiss }) => {
+      const n = group.notifications[group.notifications.length - 1].framemate;
+      return jsxs("div", {
+        className: cx(css.ShortTemplate, n.body && css.TwoLine),
+        onClick: () => onDismiss?.(),
+        children: [
+          jsx("div", {
+            className: css.ShortLogoDimensions,
+            children: jsx("img", { src: n.icon || LOGO, style: { width: "100%", height: "100%", objectFit: "contain" } }),
+          }),
+          jsxs("div", {
+            className: css.Content,
+            children: [
+              jsx("div", { className: css.Header, children: jsx("div", { className: css.Title, children: n.title }) }),
+              n.body ? jsx("div", { className: css.Body, children: n.body }) : null,
+            ],
+          }),
+        ],
+      });
+    };
+
+    for (const runtime of runtimes) {
+      for (const name of ["jsx", "jsxs"]) {
+        const original = runtime[name];
+        const wrapper = function (type, props) {
+          if (!disposed && type === renderer && props?.group?.notifications?.[0]?.framemate) {
+            return original.call(this, Toast, props, ...[...arguments].slice(2));
+          }
+          return original.apply(this, arguments);
+        };
+        runtime[name] = wrapper;
+        // If something wrapped it again on top of us, `disposed` turns ours into a passthrough.
+        cleanups.push(() => { if (runtime[name] === wrapper) runtime[name] = original; });
+      }
+    }
+
+    const text = (v, max) => String(v ?? "").slice(0, max);
+    // Only images: arbitrary URL would let a caller make Steams UI fetch it
+    const image = v => (typeof v === "string" && /^data:image\/(png|jpeg|webp|svg\+xml)[;,]/.test(v) ? v : null);
+    // sound follows borrowed types config and users toast sound setting
+    // returns {id, suppressed}; suppressed = the headset is asleep, so Steam drops the toast
+    W.__framemate.notify = ({ title, body, icon, duration_ms = 6000 } = {}) => {
+      const store = W.NotificationStore;
+      const id = store.m_nNextTestNotificationID++;
+      const suppressed = !!store.BShouldSupressToasts();
+      store.ProcessNotification(
+        // bEnableInReducedUI: the Frame runs Steam in "reduced UI" mode, which drops other toasts
+        { showToast: true, playSound: true, sound: 6 /* ToastMisc */, eFeature: 0, bCritical: false, fnTray: null,
+          bEnableInReducedUI: true,
+          toastDurationMS: Math.min(Math.max(Number(duration_ms) || 6000, 2000), 15000) },
+        { notificationID: id, rtCreated: Math.floor(Date.now() / 1000), eType: type, nToastDurationMS: 0,
+          eSource: 1, data: {}, bNewIndicator: true,
+          framemate: { title: text(title, 120), body: text(body, 500), icon: image(icon) } },
+        0 /* New */);
+      return { id, suppressed };
+    };
+  };
+
   // Steam's stores load after the context is created; wait for them.
   const start = () => {
     if (disposed) return;
-    if (typeof SteamClient === "undefined" || !W.appStore || !W.SteamUIStore) {
+    if (typeof SteamClient === "undefined" || !W.appStore || !W.SteamUIStore || !W.NotificationStore || !W.webpackChunksteamui) {
       timers.push(setTimeout(start, 2000));
       return;
     }
-    for (const section of [battery, downloads, apps, vr, stores]) {
+    for (const section of [battery, downloads, apps, vr, stores, toasts]) {
       try { section(); } catch (e) { fail(section.name, e); }
     }
   };

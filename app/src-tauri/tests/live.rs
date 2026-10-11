@@ -48,3 +48,18 @@ async fn reaches_the_real_agent_through_the_proxy() {
         assert_eq!(status.take(), None);
     }
 }
+
+/// The notification listener's path (forward.rs): pairing.json on disk -> pinned POST /api/notify
+/// Shows a toast if the headset is awake, else reports `headset_asleep`.
+#[test]
+#[ignore = "needs a running agent and FRAMEMATE_PAIRING"]
+fn forwards_a_notification_to_the_real_agent() {
+    let payload = std::env::var("FRAMEMATE_PAIRING").expect("set FRAMEMATE_PAIRING");
+    let pairing = Pairing::parse(payload.trim()).expect("payload must parse");
+    let dir = std::env::temp_dir().join("framemate-forward-live");
+    framemate_app_lib::pairing::store(&dir.join("pairing.json"), &pairing).unwrap();
+    let json = r#"{"app":"FrameMate","title":"FrameMate","body":"Test from the forwarding path"}"#;
+    let result = framemate_app_lib::forward::send(&dir, json);
+    println!("forward: {result}");
+    assert!(result == "shown" || result == "headset_asleep", "{result}");
+}

@@ -12,6 +12,8 @@ glyph), width/height removed, `fill="currentColor"` added.
 | File | Original icon | Weight | Upstream URL |
 |---|---|---|---|
 | back.svg | `arrow_back` | 700 | https://cdn.jsdelivr.net/npm/@material-symbols/svg-700@0.47.6/sharp/arrow_back.svg |
+| bell.svg | `notifications` (fill) | 400 | https://cdn.jsdelivr.net/npm/@material-symbols/svg-400@0.47.6/sharp/notifications-fill.svg |
+| bell-off.svg | `notifications_off` (fill) | 400 | https://cdn.jsdelivr.net/npm/@material-symbols/svg-400@0.47.6/sharp/notifications_off-fill.svg |
 | bell-badge.svg | `notifications_unread` (fill) | 400 | https://cdn.jsdelivr.net/npm/@material-symbols/svg-400@0.47.6/sharp/notifications_unread-fill.svg |
 | cast.svg | `cast` | 700 | https://cdn.jsdelivr.net/npm/@material-symbols/svg-700@0.47.6/sharp/cast.svg |
 | download.svg | `download` | 700 | https://cdn.jsdelivr.net/npm/@material-symbols/svg-700@0.47.6/sharp/download.svg |

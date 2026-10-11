@@ -1,7 +1,7 @@
-//! Steam CEF DevTools client (127.0.0.1:8080): attaches to `SharedJSContext`, injects `shim.js`
-//! on every `executionContextCreated` (UI reloads) and receives `{topic, data}` through the
-//! `__framemateEmit` binding. Reconnects with backoff when Steam restarts.
+//! Steam CEF DevTools client (127.0.0.1:8080): attaches to `SharedJSContext`, injects `shim.js` on every `executionContextCreated` (UI reload)
+//! Receives `{topic, data}` through `__framemateEmit`. Reconnects when Steam restarts. Carries `/api/notify` requests to shim's hook (notify.rs).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -10,19 +10,23 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::devices::DeviceMemory;
 use crate::hub::{Hub, now_ms};
+use crate::notify::{self, Outcome};
 
 const TARGET_TITLE: &str = "SharedJSContext";
 const BINDING: &str = "__framemateEmit";
 const SHIM: &str = include_str!("shim.js");
+/// Fallback icon for toasts in the headset
+const LOGO_SVG: &str = include_str!("../../../assets/framemate-black.svg");
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
-/// The shim polls every few seconds; after this much silence, ping once, then reconnect.
+/// after this much silence, ping once, then reconnect
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn run(hub: Arc<Hub>, cdp_url: String) {
+pub async fn run(hub: Arc<Hub>, cdp_url: String, mut toasts: mpsc::Receiver<notify::Request>) {
     let authority = cdp_url
         .trim_start_matches("http://")
         .trim_end_matches('/')
@@ -31,7 +35,7 @@ pub async fn run(hub: Arc<Hub>, cdp_url: String) {
     let mut devices = DeviceMemory::load();
     loop {
         let started = Instant::now();
-        let error = match session(&hub, &authority, &mut devices).await {
+        let error = match session(&hub, &authority, &mut devices, &mut toasts).await {
             Ok(()) => "connection closed".to_owned(),
             Err(e) => format!("{e:#}"),
         };
@@ -48,7 +52,12 @@ pub async fn run(hub: Arc<Hub>, cdp_url: String) {
     }
 }
 
-async fn session(hub: &Hub, authority: &str, devices: &mut DeviceMemory) -> anyhow::Result<()> {
+async fn session(
+    hub: &Hub,
+    authority: &str,
+    devices: &mut DeviceMemory,
+    toasts: &mut mpsc::Receiver<notify::Request>,
+) -> anyhow::Result<()> {
     let ws_url = find_target(authority).await?;
     let (ws, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
@@ -57,12 +66,15 @@ async fn session(hub: &Hub, authority: &str, devices: &mut DeviceMemory) -> anyh
     let mut next_id = 0u64;
     let mut call = |method: &str, params: Value| {
         next_id += 1;
-        Message::Text(json!({"id": next_id, "method": method, "params": params}).to_string().into())
+        let msg = json!({"id": next_id, "method": method, "params": params});
+        (next_id, Message::Text(msg.to_string().into()))
     };
+    // Toast requests waiting for Steam's answer
+    let mut pending: HashMap<u64, oneshot::Sender<Result<Outcome, String>>> = HashMap::new();
 
-    tx.send(call("Runtime.addBinding", json!({"name": BINDING}))).await?;
+    tx.send(call("Runtime.addBinding", json!({"name": BINDING})).1).await?;
     // Emits executionContextCreated for the existing context, which triggers injection.
-    tx.send(call("Runtime.enable", json!({}))).await?;
+    tx.send(call("Runtime.enable", json!({})).1).await?;
     tracing::info!("steam CDP: attached to {TARGET_TITLE}");
     hub.update(|s| {
         s.steam.connected = true;
@@ -71,13 +83,31 @@ async fn session(hub: &Hub, authority: &str, devices: &mut DeviceMemory) -> anyh
 
     let mut pinged = false;
     loop {
-        let msg = match tokio::time::timeout(IDLE_TIMEOUT, rx.next()).await {
+        let next = tokio::select! {
+            next = tokio::time::timeout(IDLE_TIMEOUT, rx.next()) => next,
+            Some(request) = toasts.recv() => {
+                // Queued while Steam was away; showing it now would be confusingly late.
+                if Instant::now() >= request.deadline {
+                    continue;
+                }
+                let expression = format!(
+                    "(() => {{ const notify = window.__framemate?.notify; return notify ? notify({}) \
+                     : {{ unavailable: \"the toast hook isn't installed (state.steam.topic_errors.toasts)\" }}; }})()",
+                    request.args
+                );
+                let (id, msg) = call("Runtime.evaluate", json!({"expression": expression, "returnByValue": true}));
+                tx.send(msg).await?;
+                pending.insert(id, request.reply);
+                continue;
+            }
+        };
+        let msg = match next {
             Ok(Some(msg)) => msg,
             Ok(None) => break,
             Err(_) if pinged => bail!("Steam stopped responding"),
             Err(_) => {
                 pinged = true;
-                tx.send(call("Runtime.evaluate", json!({"expression": "1"}))).await?;
+                tx.send(call("Runtime.evaluate", json!({"expression": "1"})).1).await?;
                 continue;
             }
         };
@@ -94,8 +124,9 @@ async fn session(hub: &Hub, authority: &str, devices: &mut DeviceMemory) -> anyh
                 let context = &params["context"];
                 if context["auxData"]["isDefault"].as_bool() == Some(true) {
                     tracing::info!("steam CDP: injecting shim into context {}", context["id"]);
-                    let params = json!({"expression": SHIM, "contextId": context["id"]});
-                    tx.send(call("Runtime.evaluate", params)).await?;
+                    let shim = SHIM.replace("\"__FRAMEMATE_LOGO_SVG__\"", &serde_json::to_string(LOGO_SVG)?);
+                    let params = json!({"expression": shim, "contextId": context["id"]});
+                    tx.send(call("Runtime.evaluate", params).1).await?;
                 }
             }
             Some("Runtime.executionContextsCleared") => {
@@ -108,7 +139,16 @@ async fn session(hub: &Hub, authority: &str, devices: &mut DeviceMemory) -> anyh
             }
             Some(_) => {}
             None => {
-                if let Some(exception) = msg["result"].get("exceptionDetails") {
+                if let Some(reply) = msg["id"].as_u64().and_then(|id| pending.remove(&id)) {
+                    // Only the outcome is logged, never the content.
+                    let result = if msg["result"].get("exceptionDetails").is_some() || msg.get("error").is_some() {
+                        Err("the toast hook threw inside Steam".to_owned())
+                    } else {
+                        notify::outcome(&msg["result"]["result"]["value"])
+                    };
+                    tracing::debug!("toast: {result:?}");
+                    let _ = reply.send(result);
+                } else if let Some(exception) = msg["result"].get("exceptionDetails") {
                     tracing::warn!("steam CDP: shim threw: {exception}");
                 } else if let Some(error) = msg.get("error") {
                     tracing::warn!("steam CDP: call {} failed: {error}", msg["id"]);
@@ -162,8 +202,7 @@ async fn find_target(authority: &str) -> anyhow::Result<String> {
     Ok(format!("ws://{authority}{path}"))
 }
 
-/// Minimal HTTP/1.1 GET (no HTTP client dependency). CEF ignores HTTP/1.0 requests and
-/// `Connection: close`, so the body is read by Content-Length.
+/// Minimal HTTP/1.1 GET (no HTTP client dependency). CEF ignores HTTP/1.0 requests
 pub(crate) async fn http_get(authority: &str, path: &str) -> anyhow::Result<Vec<u8>> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut stream = TcpStream::connect(authority)

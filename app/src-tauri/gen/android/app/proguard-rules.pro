@@ -16,6 +16,11 @@
    @android.webkit.JavascriptInterface <methods>;
 }
 
+# JNI into the Rust library (src-tauri/src/forward.rs looks the method up by name).
+-keep class dev.framemate.app.NotificationBridge {
+   native <methods>;
+}
+
 # ML Kit (QR pairing via tauri-plugin-barcode-scanner) creates its component registrars by
 # reflection from manifest meta-data. Its own rule keeps only their names, and R8 full mode
 # then drops the constructor and getComponents(): no SharedPrefManager etc. get registered,
