@@ -92,7 +92,7 @@ Run this in a terminal on the Frame via SSH, or use the Desktop Mode Konsole."
     say ""
     say "NOTE: the agent isn't running yet, which is normal in Desktop Mode installs."
     say "Scan the code above now anyway: The app will remember the fingerprint and connect to your headset once it's back up."
-    say "Reboot your headset of the service to start."
+    say "Reboot your headset or the service to start."
   fi
 }
 

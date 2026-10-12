@@ -50,6 +50,8 @@ pub fn send(config_dir: &Path, json: &str) -> String {
             .unwrap_or_else(|| "error: unexpected answer from the Frame".into()),
         Ok((401, _)) => "error: the Frame rejected the token, pair again".into(),
         Ok((429, _)) => "rate_limited".into(),
+        // Agents before v0.3.0 have no /api/notify.
+        Ok((404, _)) => "error: the FrameMate agent on the Frame is too old for notifications, update it".into(),
         Ok((status, body)) => format!("error: {status} {body}"),
         Err(e) => format!("error: {e}"),
     }

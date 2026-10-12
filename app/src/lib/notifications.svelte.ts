@@ -19,6 +19,11 @@ class Notifications {
   access = $state(false);
   testing = $state(false);
 
+  constructor() {
+    // Known before the first render: Settings opens its section depending on `access`.
+    this.refresh();
+  }
+
   get enabled() {
     return this.settings?.enabled ?? false;
   }

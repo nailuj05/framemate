@@ -89,7 +89,8 @@ impl Target {
     pub async fn post_json(&self, path: &str, json: &str) -> Result<(u16, String), String> {
         let exchange = async {
             let mut tls = connect(&self.connector, &self.pairing, &self.preferred).await.map_err(|e| match e {
-                Failure::Unreachable(e) | Failure::Rejected(e) => e,
+                Failure::Rejected(e) => format!("this isn't the Frame the app was paired with, pair again ({e})"),
+                Failure::Unreachable(e) => format!("can't reach the Frame ({e})"),
             })?;
             let request = format!(
                 "POST {path} HTTP/1.1\r\nHost: framemate\r\nAuthorization: Bearer {}\r\n\

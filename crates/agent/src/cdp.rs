@@ -2,7 +2,7 @@
 //! Receives `{topic, data}` through `__framemateEmit`. Reconnects when Steam restarts. Carries `/api/notify` requests to shim's hook (notify.rs).
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
@@ -19,9 +19,11 @@ use crate::notify::{self, Outcome};
 
 const TARGET_TITLE: &str = "SharedJSContext";
 const BINDING: &str = "__framemateEmit";
-const SHIM: &str = include_str!("shim.js");
-/// Fallback icon for toasts in the headset
-const LOGO_SVG: &str = include_str!("../../../assets/framemate-black.svg");
+/// `shim.js` with the fallback toast icon (the FrameMate logo) filled in.
+static SHIM: LazyLock<String> = LazyLock::new(|| {
+    let logo = include_str!("../../../assets/framemate-black.svg");
+    include_str!("shim.js").replace("\"__FRAMEMATE_LOGO_SVG__\"", &json!(logo).to_string())
+});
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// after this much silence, ping once, then reconnect
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -82,9 +84,12 @@ async fn session(
     });
 
     let mut pinged = false;
+    // Only traffic from Steam moves this, not toast requests: otherwise a steady stream of
+    // notifications would keep a hung connection alive.
+    let mut idle_until = tokio::time::Instant::now() + IDLE_TIMEOUT;
     loop {
         let next = tokio::select! {
-            next = tokio::time::timeout(IDLE_TIMEOUT, rx.next()) => next,
+            next = tokio::time::timeout_at(idle_until, rx.next()) => next,
             Some(request) = toasts.recv() => {
                 // Queued while Steam was away; showing it now would be confusingly late.
                 if Instant::now() >= request.deadline {
@@ -107,11 +112,13 @@ async fn session(
             Err(_) if pinged => bail!("Steam stopped responding"),
             Err(_) => {
                 pinged = true;
+                idle_until = tokio::time::Instant::now() + IDLE_TIMEOUT;
                 tx.send(call("Runtime.evaluate", json!({"expression": "1"})).1).await?;
                 continue;
             }
         };
         pinged = false;
+        idle_until = tokio::time::Instant::now() + IDLE_TIMEOUT;
         let text = match msg? {
             Message::Text(text) => text,
             Message::Close(_) => break,
@@ -124,8 +131,7 @@ async fn session(
                 let context = &params["context"];
                 if context["auxData"]["isDefault"].as_bool() == Some(true) {
                     tracing::info!("steam CDP: injecting shim into context {}", context["id"]);
-                    let shim = SHIM.replace("\"__FRAMEMATE_LOGO_SVG__\"", &serde_json::to_string(LOGO_SVG)?);
-                    let params = json!({"expression": shim, "contextId": context["id"]});
+                    let params = json!({"expression": SHIM.as_str(), "contextId": context["id"]});
                     tx.send(call("Runtime.evaluate", params).1).await?;
                 }
             }
@@ -247,4 +253,13 @@ pub(crate) async fn http_get(authority: &str, path: &str) -> anyhow::Result<Vec<
     })
     .await
     .context("timeout")?
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shim_gets_the_logo() {
+        assert!(!super::SHIM.contains("__FRAMEMATE_LOGO_SVG__"));
+        assert!(super::SHIM.contains("<svg"));
+    }
 }

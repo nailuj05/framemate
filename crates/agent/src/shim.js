@@ -213,7 +213,9 @@
   // Notifications"), "disable all toasts" and suppression while the headset is asleep.
   // Webpack modules are found by shape, never by id (ids change with every Steam build).
   const LOGO = "data:image/svg+xml;charset=utf-8," + encodeURIComponent("__FRAMEMATE_LOGO_SVG__");
-  const toasts = () => {
+  // What the module scan finds, kept per JS context:
+  // requiring every module again on each re-injection (agent reconnects) would be slow
+  const findToastParts = () => {
     let require;
     W.webpackChunksteamui.push([[Symbol("framemate")], {}, r => { require = r; }]);
     // Steams runtime exposes no module cache (`require.c`), require every id (like decky) also evaluate modules Steam hadnt run yet
@@ -246,12 +248,17 @@
     if (!renderer || !runtimes.length || !css || type === undefined) {
       throw new Error(`toast hook: renderer ${!!renderer}, jsx runtimes ${runtimes.length}, css ${!!css}, type ${type}`);
     }
+    return { renderer, runtimes, css, type };
+  };
 
+  const toasts = () => {
+    const { renderer, runtimes, css, type } = (W.__framemateToastParts ??= findToastParts());
     const { jsx, jsxs } = runtimes[0]; // originals, taken before patching
     const cx = (...names) => names.filter(Boolean).join(" ");
     // Same markup and classes as Steam's own short toast template.
+    const ours = group => group?.notifications?.findLast?.(n => n?.framemate)?.framemate;
     const Toast = ({ group, onDismiss }) => {
-      const n = group.notifications[group.notifications.length - 1].framemate;
+      const n = ours(group);
       return jsxs("div", {
         className: cx(css.ShortTemplate, n.body && css.TwoLine),
         onClick: () => onDismiss?.(),
@@ -275,7 +282,7 @@
       for (const name of ["jsx", "jsxs"]) {
         const original = runtime[name];
         const wrapper = function (type, props) {
-          if (!disposed && type === renderer && props?.group?.notifications?.[0]?.framemate) {
+          if (!disposed && type === renderer && ours(props?.group)) {
             return original.call(this, Toast, props, ...[...arguments].slice(2));
           }
           return original.apply(this, arguments);
@@ -311,13 +318,24 @@
   // Steam's stores load after the context is created; wait for them.
   const start = () => {
     if (disposed) return;
-    if (typeof SteamClient === "undefined" || !W.appStore || !W.SteamUIStore || !W.NotificationStore || !W.webpackChunksteamui) {
+    if (typeof SteamClient === "undefined" || !W.appStore || !W.SteamUIStore) {
       timers.push(setTimeout(start, 2000));
       return;
     }
-    for (const section of [battery, downloads, apps, vr, stores, toasts]) {
+    for (const section of [battery, downloads, apps, vr, stores]) {
       try { section(); } catch (e) { fail(section.name, e); }
     }
+    startToasts();
+  };
+  // Toasts wait for their own prerequisites, so a Steam change there only costs the toasts.
+  const startToasts = (tries = 0) => {
+    if (disposed) return;
+    if (!W.NotificationStore || !W.webpackChunksteamui) {
+      if (tries < 30) timers.push(setTimeout(() => startToasts(tries + 1), 2000));
+      else fail("toasts", new Error("NotificationStore or webpackChunksteamui not found"));
+      return;
+    }
+    try { toasts(); } catch (e) { fail("toasts", e); }
   };
   start();
   return "framemate shim installed";

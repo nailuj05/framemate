@@ -5,15 +5,22 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.service.notification.NotificationListenerService
+import android.os.SystemClock
 import android.service.notification.StatusBarNotification
 import android.util.Base64
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.os.BundleCompat
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 private const val ICON_PX = 96
+/** Older than this when its turn comes (Frame asleep or away, sends timing out): dropped. */
+private const val MAX_AGE_MS = 30_000L
+/** Waiting sends; beyond that the oldest is dropped. */
+private const val MAX_QUEUED = 10
 /** Notification flags that mean "status, not news": never shown in the headset. */
 private const val SKIP_FLAGS =
   Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE or Notification.FLAG_GROUP_SUMMARY
@@ -26,9 +33,17 @@ private const val SKIP_FLAGS =
  * pinned TLS connection, and is never logged or stored.
  */
 class FrameNotificationListener : NotificationListenerService() {
-  /** One at a time and in order, off the main thread: sending blocks on the network. */
-  private val sender = Executors.newSingleThreadExecutor()
-  /** Last text per notification key: apps re-post the same notification for progress etc. */
+  /**
+   * One at a time and in order, off the main thread: sending blocks on the network (up to ~15 s
+   * per notification while the Frame is unreachable), so the queue is short and drops the oldest.
+   */
+  private val sender = ThreadPoolExecutor(
+    1, 1, 0, TimeUnit.MILLISECONDS, LinkedBlockingQueue(MAX_QUEUED), ThreadPoolExecutor.DiscardOldestPolicy(),
+  )
+  /**
+   * Last content per notification key: apps re-post the same notification for progress etc. A new
+   * message with the same text (e.g. a second "ok") has a new `when`, so it still goes through.
+   */
   private val lastText = LinkedHashMap<String, Int>()
   private val icons = HashMap<String, String?>()
 
@@ -48,7 +63,9 @@ class FrameNotificationListener : NotificationListenerService() {
     val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))
       ?.toString().orEmpty()
     if (title.isBlank() && body.isBlank()) return
-    val fingerprint = (title + "\u0000" + body).hashCode()
+    // ONLY_ALERT_ONCE: the app itself says re-posts aren't news, even if it bumps `when`.
+    val time = if (notification.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0) 0L else notification.`when`
+    val fingerprint = (title + "\u0000" + body + "\u0000" + time).hashCode()
     synchronized(lastText) {
       if (lastText[sbn.key] == fingerprint) return
       lastText[sbn.key] = fingerprint
@@ -61,7 +78,12 @@ class FrameNotificationListener : NotificationListenerService() {
       .put("body", body)
       .put("icon", icon(sbn.packageName, app) ?: JSONObject.NULL)
       .toString()
-    sender.execute { prefs.recordResult(NotificationBridge.send(dataDir.absolutePath, json)) }
+    val posted = SystemClock.elapsedRealtime()
+    sender.execute {
+      // A toast for something that happened minutes ago would only confuse.
+      if (SystemClock.elapsedRealtime() - posted > MAX_AGE_MS) return@execute
+      prefs.recordResult(NotificationBridge.send(dataDir.absolutePath, json))
+    }
   }
 
   override fun onDestroy() {

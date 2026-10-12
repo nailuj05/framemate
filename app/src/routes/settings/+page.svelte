@@ -105,7 +105,8 @@
 </Section>
 
 {#if notifications.supported && notifications.settings}
-  <Section title="Notifications" collapsible>
+  <!-- Open while access is missing: the bell sends people here for the "restricted settings" step. -->
+  <Section title="Notifications" collapsible open={!notifications.access}>
     {#snippet aside()}<span class="aside">{notifications.enabled ? "On" : "Off"}</span>{/snippet}
     <Row label="Show in the headset" value={notifications.enabled ? "On" : "Off (bell in the top bar)"} />
     {#if !notifications.access}
