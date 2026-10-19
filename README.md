@@ -29,8 +29,18 @@
 
 FrameMate mirrors what the headset shows to your phone. Show your friends what
 you're doing in VR, guide someone through their first session, or just check what's on
-screen. The picture is the actual view in the headset, passthrough included. Encoded on using hardware acceleration to keep
+screen. The picture is the actual view in the headset, passthrough included. Encoded using hardware acceleration to keep
 the load low.
+
+## Notifications in VR
+
+<p align="center">
+  <img src="docs/screenshots/notif-vr.jpg" alt="A phone notification shown as a Steam toast in the SteamVR dashboard" width="760">
+</p>
+
+Your phone's notifications show up in the headset as Steam notifications, so you
+don't have to take the headset off to check your phone. It is a opt-in feature: turn it on with the bell in the
+app's top bar. You can select which apps notifications you want in there.
 
 ## Features
 
