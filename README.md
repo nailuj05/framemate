@@ -8,7 +8,7 @@
 <h1 align="center">FrameMate</h1>
 
 <p align="center">
-  A companion app for the <b>Steam Frame</b>: mirror the headset to your phone, keep an eye on battery, controllers, downloads and what's playing. <a href="https://youtu.be/Tva1_8JajW4">Demo Video</a>
+  A companion app for the <b>Steam Frame</b>: mirror the headset to your phone, receive phone notifications in VR, keep an eye on battery, controllers, downloads and what's playing. <a href="https://youtu.be/Tva1_8JajW4">Demo Video</a>
 </p>
 
 ## At a glance
